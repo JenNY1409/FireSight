@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FireSight: a fire-spotting drone</title>
+<style>
+:root{
+  --bg:#faf7f4;--fg:#1c1917;--muted:#6b625b;--card:#ffffff;--border:#e7e0d9;--accent:#d9480f;
+  --low:#2f9e44;--mod:#e67700;--high:#e03131;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14110f;--fg:#f3ede7;--muted:#a79d94;--card:#1f1a17;--border:#332b26;--accent:#ff8a4c;
+  --low:#51cf66;--mod:#ffa94d;--high:#ff6b6b;color-scheme:dark;}}
+:root[data-theme="dark"]{--bg:#14110f;--fg:#f3ede7;--muted:#a79d94;--card:#1f1a17;--border:#332b26;--accent:#ff8a4c;
+  --low:#51cf66;--mod:#ffa94d;--high:#ff6b6b;color-scheme:dark;}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:0 20px 56px}
+header{padding:64px 0 32px}
+.tag{display:inline-block;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);font-weight:600}
+h1{font-size:clamp(2.2rem,7vw,3.4rem);line-height:1.1;margin:8px 0 16px}
+h2{font-size:1.5rem;margin:48px 0 12px}
+p{margin:0 0 12px}.muted{color:var(--muted)}
+.lead{font-size:1.15rem;max-width:60ch}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+.card b{display:block;margin-bottom:4px}
+.step .n{color:var(--accent);font-weight:700;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.chips li{border:1px solid var(--border);background:var(--card);border-radius:999px;padding:4px 12px;font-size:14px}
+label{display:block;margin:10px 0 2px;font-size:15px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.meter{position:relative;height:14px;border-radius:7px;background:var(--border);margin:14px 0 6px;overflow:hidden}
+#bar{height:100%;width:0;background:var(--low);transition:width .15s,background .15s}
+.tick{position:absolute;top:0;bottom:0;width:2px;background:var(--bg)}
+#out{font-weight:600;margin:6px 0 0}
+.model{display:flex;align-items:center;justify-content:center;text-align:center;min-height:240px;border:2px dashed var(--border);border-radius:12px;color:var(--muted);padding:20px}
+.warn{border-left:4px solid var(--accent);padding:4px 0 4px 14px;color:var(--muted)}
+footer{margin-top:48px;font-size:14px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <span class="tag">Student engineering project · in development</span>
+  <h1>FireSight</h1>
+  <p class="lead">A small drone that looks down on a forest, spots fire with computer vision, and rates how serious it is, so responders can see which spot needs help first.</p>
+</header>
+
+<h2>How it works</h2>
+<div class="grid">
+  <div class="card step"><span class="n">1</span><b>See</b>Night-vision USB camera streams video.</div>
+  <div class="card step"><span class="n">2</span><b>Think</b>A Raspberry Pi 4 runs the vision code.</div>
+  <div class="card step"><span class="n">3</span><b>Detect</b>A YOLO model boxes fire and smoke.</div>
+  <div class="card step"><span class="n">4</span><b>Score</b>Fire size and brightness become a severity level.</div>
+  <div class="card step"><span class="n">5</span><b>Confirm</b>An alert only fires if fire shows in 3 of the last 5 frames.</div>
+</div>
+
+<h2>Try the severity score</h2>
+<p class="muted">This is the same formula the drone’s code uses. Move the sliders to see how a frame would be rated.</p>
+<div class="card">
+  <label for="f">Fire covers <b id="fv" style="display:inline">5</b>% of the frame</label>
+  <input type="range" id="f" min="0" max="20" step="0.5" value="5">
+  <label for="i">Fire brightness <b id="iv" style="display:inline">90</b>%</label>
+  <input type="range" id="i" min="0" max="100" step="1" value="90">
+  <div class="meter"><div id="bar"></div><div class="tick" style="left:25%"></div><div class="tick" style="left:55%"></div></div>
+  <p id="out" aria-live="polite"></p>
+  <p class="muted" style="font-size:14px;margin:0">score = 0.7 × min(fire share ÷ 10%, 1) + 0.3 × brightness. Below 0.25 is LOW, below 0.55 is MODERATE, and above that is HIGH.</p>
+</div>
+
+<h2>The camera, and what it can’t do</h2>
+<p>We use an Arducam 1080p USB camera with a day/night filter: normal colour in daylight, a gray infrared-style image in the dark. That helps at night, since fire glows in near-infrared.</p>
+<p class="warn">It is not a thermal camera, so it can’t measure temperature. Severity is estimated from how big and bright the fire looks, not how hot it is.</p>
+
+<h2>The drone</h2>
+<div class="model" role="img" aria-label="Placeholder for 3D CAD model">
+  <div><b>3D model coming soon</b><br>Raspberry Pi housing · camera mount with wire management · battery bay</div>
+</div>
+
+<h2>Built with</h2>
+<ul class="chips">
+  <li>Raspberry Pi 4</li><li>Arducam USB camera</li><li>OpenCV</li><li>YOLO (Ultralytics)</li>
+  <li>Python</li><li>Flight controller + PID</li><li>3D-printed housings</li><li>Rechargeable battery</li>
+</ul>
+
+<h2>Team</h2>
+<div class="grid">
+  <div class="card"><b>[Name]</b>Computer vision and code</div>
+  <div class="card"><b>[Name]</b>CAD and housings</div>
+  <div class="card"><b>[Name]</b>Flight and electronics</div>
+  <div class="card"><b>[Name]</b>Website and 3D viewer</div>
+</div>
+
+<footer>
+  <p>Status: the detection code is written and tested on synthetic images. Real-fire training and flight tests are next.</p>
+  <p>Safety: we test only with small, controlled, permitted fires, and never fly near a real wildfire.</p>
+</footer>
+</main>
+<script>
+(function(){
+  var f=document.getElementById("f"),i=document.getElementById("i");
+  var fv=document.getElementById("fv"),iv=document.getElementById("iv");
+  var bar=document.getElementById("bar"),out=document.getElementById("out");
+  function update(){
+    var share=parseFloat(f.value)/100,bright=parseFloat(i.value)/100;
+    var score=share>0?0.7*Math.min(share/0.10,1)+0.3*bright:0;
+    var level=share===0?"NONE":score<0.25?"LOW":score<0.55?"MODERATE":"HIGH";
+    var color=level==="HIGH"?"var(--high)":level==="MODERATE"?"var(--mod)":"var(--low)";
+    fv.textContent=f.value;iv.textContent=i.value;
+    bar.style.width=(score*100)+"%";bar.style.background=color;
+    out.textContent="Score "+score.toFixed(2)+": "+level;
+  }
+  f.addEventListener("input",update);i.addEventListener("input",update);update();
+})();
+</script>
+</body>
+</html>
