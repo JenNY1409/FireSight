@@ -296,185 +296,147 @@ footer p{color:var(--dim);font-size:14px}
 (function() {
   var cadCanvas = document.getElementById('cadCanvas');
   var cctx = cadCanvas.getContext('2d');
-  var rotX = 0.55, rotY = -0.65, zoom = 1.0, exploded = false;
-  var dragging = false, lastX = 0, lastY = 0, customStl = null;
+  var rotX = 0.55, rotY = -0.65, zoom = 1.0, exploded = false, dragging = false, lx = 0, ly = 0;
 
   function proj(x, y, z, ex) {
     var y0 = y + (ex || 0);
-    var cy = Math.cos(rotY), sy = Math.sin(rotY);
-    var x1 = x * cy - z * sy, z1 = x * sy + z * cy;
-    var cx = Math.cos(rotX), sx = Math.sin(rotX);
-    var y2 = y0 * cx - z1 * sx, z2 = y0 * sx + z1 * cx;
+    var x1 = x * Math.cos(rotY) - z * Math.sin(rotY);
+    var z1 = x * Math.sin(rotY) + z * Math.cos(rotY);
+    var y2 = y0 * Math.cos(rotX) - z1 * Math.sin(rotX);
+    var z2 = y0 * Math.sin(rotX) + z1 * Math.cos(rotX);
     var s = (420 * zoom) / (420 * zoom + z2 + 260);
-    return { x: cadCanvas.width / 2 + x1 * s, y: cadCanvas.height / 2 + y2 * s };
+    return { x: 220 + x1 * s, y: 165 + y2 * s };
   }
 
-  function box3D(w, h, d, oy, ex, col, fill) {
+  function box(w, h, d, oy, ex, col, fill) {
     var hw = w / 2, hh = h / 2, hd = d / 2;
-    var pts = new Array(
-      proj(-hw, oy - hh, -hd, ex), proj(hw, oy - hh, -hd, ex),
-      proj(hw, oy + hh, -hd, ex), proj(-hw, oy + hh, -hd, ex),
-      proj(-hw, oy - hh, hd, ex), proj(hw, oy - hh, hd, ex),
-      proj(hw, oy + hh, hd, ex), proj(-hw, oy + hh, hd, ex)
-    );
-    var pairs = new Array(0,1, 1,2, 2,3, 3,0, 4,5, 5,6, 6,7, 7,4, 0,4, 1,5, 2,6, 3,7);
-    cctx.strokeStyle = col;
-    cctx.lineWidth = 1.4;
+    var p0 = proj(-hw, oy - hh, -hd, ex), p1 = proj(hw, oy - hh, -hd, ex);
+    var p2 = proj(hw, oy + hh, -hd, ex), p3 = proj(-hw, oy + hh, -hd, ex);
+    var p4 = proj(-hw, oy - hh, hd, ex),  p5 = proj(hw, oy - hh, hd, ex);
+    var p6 = proj(hw, oy + hh, hd, ex),   p7 = proj(-hw, oy + hh, hd, ex);
+    cctx.strokeStyle = col; cctx.lineWidth = 1.5;
     if (fill) {
-      cctx.fillStyle = fill;
-      cctx.beginPath();
-      cctx.moveTo(pts.at(0).x, pts.at(0).y); cctx.lineTo(pts.at(1).x, pts.at(1).y);
-      cctx.lineTo(pts.at(5).x, pts.at(5).y); cctx.lineTo(pts.at(4).x, pts.at(4).y);
+      cctx.fillStyle = fill; cctx.beginPath();
+      cctx.moveTo(p0.x, p0.y); cctx.lineTo(p1.x, p1.y); cctx.lineTo(p5.x, p5.y); cctx.lineTo(p4.x, p4.y);
       cctx.closePath(); cctx.fill();
     }
     cctx.beginPath();
-    for (var i = 0; i < pairs.length; i += 2) {
-      var a = pts.at(pairs.at(i)), b = pts.at(pairs.at(i + 1));
-      cctx.moveTo(a.x, a.y); cctx.lineTo(b.x, b.y);
-    }
+    cctx.moveTo(p0.x, p0.y); cctx.lineTo(p1.x, p1.y); cctx.lineTo(p2.x, p2.y); cctx.lineTo(p3.x, p3.y); cctx.closePath();
+    cctx.moveTo(p4.x, p4.y); cctx.lineTo(p5.x, p5.y); cctx.lineTo(p6.x, p6.y); cctx.lineTo(p7.x, p7.y); cctx.closePath();
+    cctx.moveTo(p0.x, p0.y); cctx.lineTo(p4.x, p4.y); cctx.moveTo(p1.x, p1.y); cctx.lineTo(p5.x, p5.y);
+    cctx.moveTo(p2.x, p2.y); cctx.lineTo(p6.x, p6.y); cctx.moveTo(p3.x, p3.y); cctx.lineTo(p7.x, p7.y);
     cctx.stroke();
   }
 
-  function ring3D(rx, ry, rz, r, ex, col, dash) {
-    cctx.save();
-    cctx.strokeStyle = col;
-    cctx.lineWidth = 1.2;
-    if (dash) cctx.setLineDash(new Array(5, 4));
-    cctx.beginPath();
+  function ring(rx, ry, rz, r, ex, col) {
+    cctx.strokeStyle = col; cctx.lineWidth = 1.2; cctx.beginPath();
     for (var i = 0; i <= 32; i++) {
       var a = (i / 32) * Math.PI * 2;
       var p = proj(rx + Math.cos(a) * r, ry, rz + Math.sin(a) * r, ex);
       if (i === 0) cctx.moveTo(p.x, p.y); else cctx.lineTo(p.x, p.y);
     }
     cctx.stroke();
-    cctx.restore();
   }
 
-  function renderCAD() {
-    cctx.clearRect(0, 0, cadCanvas.width, cadCanvas.height);
+  function drawCAD() {
+    cctx.clearRect(0, 0, 440, 330);
     var ex = exploded ? 1 : 0;
-    if (customStl) {
-      cctx.strokeStyle = '#7fe0ff';
-      cctx.lineWidth = 0.8;
-      cctx.beginPath();
-      customStl.forEach(function(t) {
-        var p0 = proj(t.at(0).x, t.at(0).y, t.at(0).z, 0);
-        var p1 = proj(t.at(1).x, t.at(1).y, t.at(1).z, 0);
-        var p2 = proj(t.at(2).x, t.at(2).y, t.at(2).z, 0);
-        cctx.moveTo(p0.x, p0.y); cctx.lineTo(p1.x, p1.y);
-        cctx.lineTo(p2.x, p2.y); cctx.lineTo(p0.x, p0.y);
-      });
-      cctx.stroke();
-      return;
-    }
-    box3D(54, 18, 76, 26, ex * 34, '#a9c4ee', 'rgba(12,58,140,0.45)');
-    box3D(78, 8, 78, 0, 0, '#eef5ff', 'rgba(127,224,255,0.12)');
-    var arms = new Array({x:88,z:-88,n:'M0 FR'},{x:-88,z:88,n:'M1 RL'},{x:-88,z:-88,n:'M2 FL'},{x:88,z:88,n:'M3 RR'});
-    arms.forEach(function(a) {
-      var p0 = proj(a.x * 0.35, 0, a.z * 0.35, 0), p1 = proj(a.x, 0, a.z, 0);
+    box(54, 18, 76, 26, ex * 34, '#a9c4ee', 'rgba(12,58,140,0.5)');
+    box(78, 8, 78, 0, 0, '#eef5ff', 'rgba(127,224,255,0.12)');
+    var armPts = [
+      {x: 88, z: -88, t: 'M0 FR'}, {x: -88, z: 88, t: 'M1 RL'},
+      {x: -88, z: -88, t: 'M2 FL'}, {x: 88, z: 88, t: 'M3 RR'}
+    ];
+    for (var i = 0; i < armPts.length; i++) {
+      var a = armPts[i];
+      var s0 = proj(a.x * 0.35, 0, a.z * 0.35, 0), s1 = proj(a.x, 0, a.z, 0);
       cctx.strokeStyle = '#eef5ff'; cctx.lineWidth = 4;
-      cctx.beginPath(); cctx.moveTo(p0.x, p0.y); cctx.lineTo(p1.x, p1.y); cctx.stroke();
-      ring3D(a.x, -4, a.z, 11, 0, '#7fe0ff', false);
-      ring3D(a.x, -9, a.z, 44, -ex * 12, 'rgba(127,224,255,0.65)', true);
-      cctx.fillStyle = '#7fe0ff'; cctx.font = '9px monospace'; cctx.fillText(a.n, p1.x - 14, p1.y + 18);
-    });
-    box3D(64, 16, 48, -16, -ex * 26, '#7fe0ff', 'rgba(127,224,255,0.18)');
-    var piP = proj(0, -26, -4, -ex * 26);
-    cctx.fillStyle = '#eef5ff'; cctx.fillText('PI + LSM6DS3TR-C HAT', piP.x - 48, piP.y - 4);
-    ring3D(0, 8, 52, 8, ex * 14, '#ffd166', false);
-    var camP = proj(0, 8, 60, ex * 14);
-    cctx.fillStyle = '#ffd166'; cctx.fillText('ARDUCAM IR/RGB', camP.x - 36, camP.y + 14);
+      cctx.beginPath(); cctx.moveTo(s0.x, s0.y); cctx.lineTo(s1.x, s1.y); cctx.stroke();
+      ring(a.x, -4, a.z, 11, 0, '#7fe0ff');
+      ring(a.x, -9, a.z, 44, -ex * 12, 'rgba(127,224,255,0.6)');
+      cctx.fillStyle = '#7fe0ff'; cctx.font = '10px monospace'; cctx.fillText(a.t, s1.x - 14, s1.y + 18);
+    }
+    box(64, 16, 48, -16, -ex * 26, '#7fe0ff', 'rgba(127,224,255,0.2)');
+    var pi = proj(0, -26, -4, -ex * 26);
+    cctx.fillStyle = '#eef5ff'; cctx.fillText('PI + LSM6DS3TR-C HAT', pi.x - 52, pi.y - 4);
+    ring(0, 8, 52, 9, ex * 14, '#ffd166');
+    var cam = proj(0, 8, 60, ex * 14);
+    cctx.fillStyle = '#ffd166'; cctx.fillText('ARDUCAM IR/RGB', cam.x - 40, cam.y + 14);
   }
 
-  cadCanvas.addEventListener('mousedown', function(e) { dragging = true; lastX = e.clientX; lastY = e.clientY; });
-  window.addEventListener('mouseup', function() { dragging = false; });
-  window.addEventListener('mousemove', function(e) {
+  cadCanvas.onmousedown = function(e) { dragging = true; lx = e.clientX; ly = e.clientY; };
+  window.onmouseup = function() { dragging = false; };
+  window.onmousemove = function(e) {
     if (!dragging) return;
-    rotY += (e.clientX - lastX) * 0.012; rotX += (e.clientY - lastY) * 0.012;
-    lastX = e.clientX; lastY = e.clientY; renderCAD();
-  });
-  cadCanvas.addEventListener('wheel', function(e) {
-    e.preventDefault(); zoom = Math.max(0.5, Math.min(2.2, zoom - e.deltaY * 0.001)); renderCAD();
-  }, {passive: false});
-
-  document.querySelectorAll('button').forEach(function(btn) {
-    if (btn.dataset.view) {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('button').forEach(function(b) { if (b.dataset.view) b.classList.remove('active'); });
-        btn.classList.add('active');
-        if (btn.dataset.view === 'iso') { rotX = 0.55; rotY = -0.65; }
-        if (btn.dataset.view === 'top') { rotX = 1.56; rotY = 0; }
-        if (btn.dataset.view === 'side') { rotX = 0.05; rotY = -1.57; }
-        renderCAD();
-      });
-    }
-  });
-  document.getElementById('explodeBtn').addEventListener('click', function() {
-    exploded = !exploded; this.classList.toggle('active', exploded); renderCAD();
-  });
-  document.getElementById('stlUpload').addEventListener('change', function(e) {
-    var f = e.target.files.item(0); if (!f) return;
-    var r = new FileReader();
-    r.onload = function(ev) {
-      var dv = new DataView(ev.target.result);
-      if (dv.byteLength < 84) return;
-      var n = Math.min(dv.getUint32(80, true), 3500), tris = new Array();
-      for (var i = 0; i < n; i++) {
-        var o = 84 + i * 50 + 12, t = new Array();
-        for (var v = 0; v < 3; v++) t.push({ x: dv.getFloat32(o+v*12, true)*1.5, y: -dv.getFloat32(o+v*12+4, true)*1.5, z: dv.getFloat32(o+v*12+8, true)*1.5 });
-        tris.push(t);
-      }
-      customStl = tris; renderCAD();
+    rotY += (e.clientX - lx) * 0.012; rotX += (e.clientY - ly) * 0.012;
+    lx = e.clientX; ly = e.clientY; drawCAD();
+  };
+  document.getElementById('explodeBtn').onclick = function() {
+    exploded = !exploded; this.classList.toggle('active', exploded); drawCAD();
+  };
+  var vBtns = document.querySelectorAll('[data-view]');
+  for (var v = 0; v < vBtns.length; v++) {
+    vBtns[v].onclick = function() {
+      for (var k = 0; k < vBtns.length; k++) vBtns[k].classList.remove('active');
+      this.classList.add('active');
+      var m = this.getAttribute('data-view');
+      if (m === 'iso') { rotX = 0.55; rotY = -0.65; }
+      if (m === 'top') { rotX = 1.56; rotY = 0; }
+      if (m === 'side') { rotX = 0.05; rotY = -1.57; }
+      drawCAD();
     };
-    r.readAsArrayBuffer(f);
-  });
-  renderCAD();
-  var canvas = document.getElementById('demoCanvas'), ctx = canvas.getContext('2d');
-  var tempSlider = document.getElementById('tempSlider'), tempVal = document.getElementById('tempVal');
-  var logits = new Array(3.6, 0.2, -0.8, -1.6), hotShare = 0.2, customImg = null, preset = 'clear';
-  var PRESETS = new Map();
-  PRESETS.set('clear',    { l: new Array(3.6, 0.2, -0.8, -1.6), h: 0.2, bg: '#0e3b2c', b: new Array() });
-  PRESETS.set('low',      { l: new Array(-0.2, 2.4, 0.6, -1.2), h: 3.4, bg: '#133524', b: new Array({x:290,y:175,r:24,c1:'#ffae34',c2:'#ff4d1a'}) });
-  PRESETS.set('moderate', { l: new Array(-1.4, 0.8, 2.8, 1.1),  h: 11.8, bg: '#1b2b1e', b: new Array({x:185,y:150,r:48,c1:'#ffd166',c2:'#f94144'},{x:255,y:175,r:34,c1:'#ff9f1c',c2:'#d62828'}) });
-  PRESETS.set('high',     { l: new Array(-2.8, -0.4, 1.3, 3.5), h: 28.5, bg: '#241916', b: new Array({x:160,y:140,r:75,c1:'#fff3b0',c2:'#e63946'},{x:270,y:160,r:68,c1:'#ffd166',c2:'#d00000'}) });
+  }
+  drawCAD();
 
-  function renderFrame() {
-    if (customImg) { ctx.drawImage(customImg, 0, 0, canvas.width, canvas.height); return; }
-    var p = PRESETS.get(preset);
-    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (var i = 0; i < 80; i++) {
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(34,95,58,0.45)' : 'rgba(18,62,38,0.55)';
-      ctx.beginPath(); ctx.arc((i * 73) % 480, (i * 41) % 300, 16 + (i % 14), 0, Math.PI * 2); ctx.fill();
-    }
-    p.b.forEach(function(b, idx) {
-      var g = ctx.createRadialGradient(b.x, b.y, 4, b.x, b.y, b.r);
-      g.addColorStop(0, b.c1); g.addColorStop(0.6, b.c2); g.addColorStop(1, 'rgba(208,0,0,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#7fe0ff'; ctx.strokeRect(b.x - b.r * 0.85, b.y - b.r * 0.85, b.r * 1.7, b.r * 1.7);
-      ctx.fillStyle = '#7fe0ff'; ctx.font = '10px monospace'; ctx.fillText('ROI #' + (idx + 1), b.x - b.r * 0.85, b.y - b.r * 0.85 - 4);
-    });
+  var dCan = document.getElementById('demoCanvas'), dCtx = dCan.getContext('2d');
+  var slider = document.getElementById('tempSlider'), tVal = document.getElementById('tempVal');
+  var curLogits = [3.6, 0.2, -0.8, -1.6], curHot = 0.2, curPreset = 'clear', upImg = null;
+
+  function getPreset(name) {
+    if (name === 'low') return { l: [-0.2, 2.4, 0.6, -1.2], h: 3.4, bg: '#133524', fires: [{x:290,y:175,r:26}] };
+    if (name === 'moderate') return { l: [-1.4, 0.8, 2.8, 1.1], h: 11.8, bg: '#1b2b1e', fires: [{x:185,y:150,r:48},{x:255,y:175,r:34}] };
+    if (name === 'high') return { l: [-2.8, -0.4, 1.3, 3.5], h: 28.5, bg: '#241916', fires: [{x:160,y:140,r:75},{x:270,y:160,r:68}] };
+    return { l: [3.6, 0.2, -0.8, -1.6], h: 0.2, bg: '#0e3b2c', fires: [] };
   }
 
-  function updateDemo() {
-    var T = parseFloat(tempSlider.value); tempVal.textContent = T.toFixed(2);
-    var sc = logits.map(function(v) { return v / T; });
-    var mx = Math.max.apply(null, sc);
-    var ex = sc.map(function(v) { return Math.exp(v - mx); });
-    var sm = ex.reduce(function(a, b) { return a + b; }, 0);
-    var probs = ex.map(function(e) { return e / sm; });
-    var names = new Array('no_fire','low','moderate','high');
-    names.forEach(function(lbl, i) {
-      var pct = (probs.at(i) * 100).toFixed(1) + '%';
-      document.getElementById('prob-' + lbl).textContent = pct;
-      document.getElementById('bar-' + lbl).style.width = pct;
-    });
-    var pFire = 1 - probs.at(0);
+  function drawDemo() {
+    if (upImg) { dCtx.drawImage(upImg, 0, 0, 480, 300); return; }
+    var p = getPreset(curPreset);
+    dCtx.fillStyle = p.bg; dCtx.fillRect(0, 0, 480, 300);
+    for (var i = 0; i < 70; i++) {
+      dCtx.fillStyle = i % 2 === 0 ? 'rgba(34,95,58,0.5)' : 'rgba(18,62,38,0.6)';
+      dCtx.beginPath(); dCtx.arc((i * 73) % 480, (i * 41) % 300, 18 + (i % 12), 0, Math.PI * 2); dCtx.fill();
+    }
+    for (var j = 0; j < p.fires.length; j++) {
+      var f = p.fires[j];
+      var g = dCtx.createRadialGradient(f.x, f.y, 4, f.x, f.y, f.r);
+      g.addColorStop(0, '#fff3b0'); g.addColorStop(0.5, '#ff5400'); g.addColorStop(1, 'rgba(208,0,0,0)');
+      dCtx.fillStyle = g; dCtx.beginPath(); dCtx.arc(f.x, f.y, f.r, 0, Math.PI * 2); dCtx.fill();
+      dCtx.strokeStyle = '#7fe0ff'; dCtx.strokeRect(f.x - f.r * 0.85, f.y - f.r * 0.85, f.r * 1.7, f.r * 1.7);
+      dCtx.fillStyle = '#7fe0ff'; dCtx.font = '10px monospace'; dCtx.fillText('ROI #' + (j + 1), f.x - f.r * 0.85, f.y - f.r * 0.85 - 4);
+    }
+  }
+
+  function updateProbs() {
+    var T = parseFloat(slider.value); tVal.textContent = T.toFixed(2);
+    var s0 = curLogits[0] / T, s1 = curLogits[1] / T, s2 = curLogits[2] / T, s3 = curLogits[3] / T;
+    var mx = Math.max(s0, s1, s2, s3);
+    var e0 = Math.exp(s0 - mx), e1 = Math.exp(s1 - mx), e2 = Math.exp(s2 - mx), e3 = Math.exp(s3 - mx);
+    var sm = e0 + e1 + e2 + e3;
+    var probs = [e0 / sm, e1 / sm, e2 / sm, e3 / sm];
+    var keys = ['no_fire', 'low', 'moderate', 'high'];
+    for (var i = 0; i < 4; i++) {
+      var pct = (probs[i] * 100).toFixed(1) + '%';
+      document.getElementById('prob-' + keys[i]).textContent = pct;
+      document.getElementById('bar-' + keys[i]).style.width = pct;
+    }
+    var pFire = 1 - probs[0];
     document.getElementById('pFireVal').textContent = pFire.toFixed(3);
-    document.getElementById('hotShare').textContent = hotShare.toFixed(1) + '%';
+    document.getElementById('hotShare').textContent = curHot.toFixed(1) + '%';
     var badge = document.getElementById('decisionBadge'); badge.className = 'badge';
     if (pFire >= 0.65) {
-      var fp = probs.slice(1), sev = new Array('low','moderate','high').at(fp.indexOf(Math.max.apply(null, fp)));
-      badge.textContent = 'FIRE \u00B7 ' + sev.toUpperCase(); badge.classList.add('sev-' + sev);
+      var sev = (probs[1] >= probs[2] && probs[1] >= probs[3]) ? 'low' : (probs[2] >= probs[3] ? 'moderate' : 'high');
+      badge.textContent = 'FIRE · ' + sev.toUpperCase(); badge.classList.add('sev-' + sev);
     } else if (pFire <= 0.35) {
       badge.textContent = 'CLEAR (NO_FIRE)'; badge.classList.add('sev-no_fire');
     } else {
@@ -482,97 +444,35 @@ footer p{color:var(--dim);font-size:14px}
     }
   }
 
-  document.querySelectorAll('button').forEach(function(btn) {
-    if (btn.dataset.preset) {
-      btn.addEventListener('click', function() {
-        document.querySelectorAll('button').forEach(function(c) { if (c.dataset.preset) c.classList.remove('active'); });
-        btn.classList.add('active'); customImg = null; preset = btn.dataset.preset;
-        var item = PRESETS.get(preset);
-        logits = item.l; hotShare = item.h; renderFrame(); updateDemo();
-      });
-    }
-  });
-
-  document.getElementById('imgUpload').addEventListener('change', function(e) {
-    var f = e.target.files.item(0); if (!f) return;
-    var r = new FileReader();
-    r.onload = function(ev) {
-      var img = new Image();
-      img.onload = function() {
-        customImg = img;
-        document.querySelectorAll('button').forEach(function(c) { if (c.dataset.preset) c.classList.remove('active'); });
-        var off = document.createElement('canvas'); off.width = 64; off.height = 64;
-        var oc = off.getContext('2d'); oc.drawImage(img, 0, 0, 64, 64);
-        var d = oc.getImageData(0, 0, 64, 64).data, warm = 0;
-        for (var i = 0; i < d.length; i += 4) if (d.at(i) > 180 && d.at(i) > d.at(i+1) * 1.35) warm++;
-        hotShare = (warm / 4096) * 100;
-        logits = hotShare < 0.8 ? new Array(3.2,0.4,-0.9,-1.8) : hotShare < 5 ? new Array(-0.4,2.3,0.7,-1) : hotShare < 16 ? new Array(-1.6,0.7,2.7,1.2) : new Array(-2.9,-0.5,1.1,3.4);
-        renderFrame(); updateDemo();
-      };
-      img.src = ev.target.result;
+  var pBtns = document.querySelectorAll('[data-preset]');
+  for (var p = 0; p < pBtns.length; p++) {
+    pBtns[p].onclick = function() {
+      for (var k = 0; k < pBtns.length; k++) pBtns[k].classList.remove('active');
+      this.classList.add('active'); upImg = null; curPreset = this.getAttribute('data-preset');
+      var d = getPreset(curPreset); curLogits = d.l; curHot = d.h; drawDemo(); updateProbs();
     };
-    r.readAsDataURL(f);
-  });
-  tempSlider.addEventListener('input', updateDemo);
-
-  var tick = 0;
-  setInterval(function() {
-    tick += 0.15;
-    var r = Math.sin(tick) * 0.6, p = Math.cos(tick * 0.8) * 0.4;
-    document.getElementById('hudAtt').textContent = 'ROLL ' + (r>=0?'+':'') + r.toFixed(1) + '\u00B0 \u00B7 PITCH ' + (p>=0?'+':'') + p.toFixed(1) + '\u00B0';
-    var ra = Math.round(r * 6), pa = Math.round(p * 6);
-    document.getElementById('m0').textContent = (1420 - ra - pa) + ' \u00B5s';
-    document.getElementById('m1').textContent = (1420 + ra + pa) + ' \u00B5s';
-    document.getElementById('m2').textContent = (1420 + ra - pa) + ' \u00B5s';
-    document.getElementById('m3').textContent = (1420 - ra + pa) + ' \u00B5s';
-  }, 250);
-  renderFrame(); updateDemo();
-
-  var cmTest = new Array(new Array(48,2,0,0), new Array(2,24,3,0), new Array(0,2,23,2), new Array(0,0,2,22));
-  var cmVal  = new Array(new Array(37,1,0,0), new Array(1,19,2,0), new Array(0,1,16,1), new Array(0,0,1,17));
-  var split = 'test';
-  function renderCM() {
-    var cm = split === 'test' ? cmTest : cmVal;
-    document.getElementById('mAcc').textContent = split === 'test' ? '90.0%' : '92.7%';
-    document.getElementById('mRec').textContent = split === 'test' ? '91.2%' : '93.1%';
-    document.getElementById('mFar').textContent = split === 'test' ? '4.0%' : '2.6%';
-    document.getElementById('cmNote').textContent = 'Split: ' + split + '/ (n=' + (split==='test'?130:96) + ') \u00B7 Severity MAE: ' + (split==='test'?'0.14':'0.11') + ' classes';
-    var tb = document.getElementById('cmBody'); tb.innerHTML = '';
-    new Array('no_fire','low','moderate','high').forEach(function(rn, ri) {
-      var tr = document.createElement('tr'), th = document.createElement('th'); th.textContent = rn; tr.appendChild(th);
-      cm.at(ri).forEach(function(val, ci) {
-        var td = document.createElement('td'); td.textContent = val;
-        if (ri === ci) td.className = 'cm-diag'; else if (val > 0) td.className = 'cm-err';
-        tr.appendChild(td);
-      });
-      tb.appendChild(tr);
-    });
   }
-  document.getElementById('btnSplitTest').addEventListener('click', function() {
-    split = 'test'; this.classList.add('active'); document.getElementById('btnSplitVal').classList.remove('active'); renderCM();
-  });
-  document.getElementById('btnSplitVal').addEventListener('click', function() {
-    split = 'val'; this.classList.add('active'); document.getElementById('btnSplitTest').classList.remove('active'); renderCM();
-  });
-  document.getElementById('metricsUpload').addEventListener('change', function(e) {
-    var f = e.target.files.item(0); if (!f) return;
-    var r = new FileReader();
-    r.onload = function(ev) {
-      try {
-        var j = JSON.parse(ev.target.result);
-        new Array('test','val').forEach(function(sp) {
-          var s = sp === 'test' ? j.test : j.val;
-          if (s && typeof s === 'object' && s.confusion_matrix_rows_truth_cols_pred) {
-            if (sp === 'test') cmTest = s.confusion_matrix_rows_truth_cols_pred;
-            else cmVal = s.confusion_matrix_rows_truth_cols_pred;
-          }
-        });
-        renderCM();
-      } catch (err) { alert('Invalid metrics.json: ' + err.message); }
-    };
-    r.readAsText(f);
-  });
-  renderCM();
+  slider.oninput = updateProbs;
+  drawDemo(); updateProbs();
+
+  var cmBody = document.getElementById('cmBody');
+  var rows = [
+    ['no_fire', 48, 2, 0, 0],
+    ['low',     2, 24, 3, 0],
+    ['moderate',0,  2, 23, 2],
+    ['high',    0,  0, 2, 22]
+  ];
+  for (var r = 0; r < rows.length; r++) {
+    var tr = document.createElement('tr');
+    var th = document.createElement('th'); th.textContent = rows[r][0]; tr.appendChild(th);
+    for (var c = 1; c <= 4; c++) {
+      var td = document.createElement('td'); td.textContent = rows[r][c];
+      if (r === c - 1) td.className = 'cm-diag';
+      else if (rows[r][c] > 0) td.className = 'cm-err';
+      tr.appendChild(td);
+    }
+    cmBody.appendChild(tr);
+  }
 })();
 </script>
 </body>
