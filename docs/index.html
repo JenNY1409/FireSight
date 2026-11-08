@@ -429,3 +429,151 @@ footer p{color:var(--dim);font-size:14px}
     r.readAsArrayBuffer(f);
   });
   renderCAD();
+  var canvas = document.getElementById('demoCanvas'), ctx = canvas.getContext('2d');
+  var tempSlider = document.getElementById('tempSlider'), tempVal = document.getElementById('tempVal');
+  var logits = new Array(3.6, 0.2, -0.8, -1.6), hotShare = 0.2, customImg = null, preset = 'clear';
+  var PRESETS = new Map();
+  PRESETS.set('clear',    { l: new Array(3.6, 0.2, -0.8, -1.6), h: 0.2, bg: '#0e3b2c', b: new Array() });
+  PRESETS.set('low',      { l: new Array(-0.2, 2.4, 0.6, -1.2), h: 3.4, bg: '#133524', b: new Array({x:290,y:175,r:24,c1:'#ffae34',c2:'#ff4d1a'}) });
+  PRESETS.set('moderate', { l: new Array(-1.4, 0.8, 2.8, 1.1),  h: 11.8, bg: '#1b2b1e', b: new Array({x:185,y:150,r:48,c1:'#ffd166',c2:'#f94144'},{x:255,y:175,r:34,c1:'#ff9f1c',c2:'#d62828'}) });
+  PRESETS.set('high',     { l: new Array(-2.8, -0.4, 1.3, 3.5), h: 28.5, bg: '#241916', b: new Array({x:160,y:140,r:75,c1:'#fff3b0',c2:'#e63946'},{x:270,y:160,r:68,c1:'#ffd166',c2:'#d00000'}) });
+
+  function renderFrame() {
+    if (customImg) { ctx.drawImage(customImg, 0, 0, canvas.width, canvas.height); return; }
+    var p = PRESETS.get(preset);
+    ctx.fillStyle = p.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    for (var i = 0; i < 80; i++) {
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(34,95,58,0.45)' : 'rgba(18,62,38,0.55)';
+      ctx.beginPath(); ctx.arc((i * 73) % 480, (i * 41) % 300, 16 + (i % 14), 0, Math.PI * 2); ctx.fill();
+    }
+    p.b.forEach(function(b, idx) {
+      var g = ctx.createRadialGradient(b.x, b.y, 4, b.x, b.y, b.r);
+      g.addColorStop(0, b.c1); g.addColorStop(0.6, b.c2); g.addColorStop(1, 'rgba(208,0,0,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#7fe0ff'; ctx.strokeRect(b.x - b.r * 0.85, b.y - b.r * 0.85, b.r * 1.7, b.r * 1.7);
+      ctx.fillStyle = '#7fe0ff'; ctx.font = '10px monospace'; ctx.fillText('ROI #' + (idx + 1), b.x - b.r * 0.85, b.y - b.r * 0.85 - 4);
+    });
+  }
+
+  function updateDemo() {
+    var T = parseFloat(tempSlider.value); tempVal.textContent = T.toFixed(2);
+    var sc = logits.map(function(v) { return v / T; });
+    var mx = Math.max.apply(null, sc);
+    var ex = sc.map(function(v) { return Math.exp(v - mx); });
+    var sm = ex.reduce(function(a, b) { return a + b; }, 0);
+    var probs = ex.map(function(e) { return e / sm; });
+    var names = new Array('no_fire','low','moderate','high');
+    names.forEach(function(lbl, i) {
+      var pct = (probs.at(i) * 100).toFixed(1) + '%';
+      document.getElementById('prob-' + lbl).textContent = pct;
+      document.getElementById('bar-' + lbl).style.width = pct;
+    });
+    var pFire = 1 - probs.at(0);
+    document.getElementById('pFireVal').textContent = pFire.toFixed(3);
+    document.getElementById('hotShare').textContent = hotShare.toFixed(1) + '%';
+    var badge = document.getElementById('decisionBadge'); badge.className = 'badge';
+    if (pFire >= 0.65) {
+      var fp = probs.slice(1), sev = new Array('low','moderate','high').at(fp.indexOf(Math.max.apply(null, fp)));
+      badge.textContent = 'FIRE \u00B7 ' + sev.toUpperCase(); badge.classList.add('sev-' + sev);
+    } else if (pFire <= 0.35) {
+      badge.textContent = 'CLEAR (NO_FIRE)'; badge.classList.add('sev-no_fire');
+    } else {
+      badge.textContent = 'UNCERTAIN (REVIEW)'; badge.classList.add('sev-uncertain');
+    }
+  }
+
+  document.querySelectorAll('button').forEach(function(btn) {
+    if (btn.dataset.preset) {
+      btn.addEventListener('click', function() {
+        document.querySelectorAll('button').forEach(function(c) { if (c.dataset.preset) c.classList.remove('active'); });
+        btn.classList.add('active'); customImg = null; preset = btn.dataset.preset;
+        var item = PRESETS.get(preset);
+        logits = item.l; hotShare = item.h; renderFrame(); updateDemo();
+      });
+    }
+  });
+
+  document.getElementById('imgUpload').addEventListener('change', function(e) {
+    var f = e.target.files.item(0); if (!f) return;
+    var r = new FileReader();
+    r.onload = function(ev) {
+      var img = new Image();
+      img.onload = function() {
+        customImg = img;
+        document.querySelectorAll('button').forEach(function(c) { if (c.dataset.preset) c.classList.remove('active'); });
+        var off = document.createElement('canvas'); off.width = 64; off.height = 64;
+        var oc = off.getContext('2d'); oc.drawImage(img, 0, 0, 64, 64);
+        var d = oc.getImageData(0, 0, 64, 64).data, warm = 0;
+        for (var i = 0; i < d.length; i += 4) if (d.at(i) > 180 && d.at(i) > d.at(i+1) * 1.35) warm++;
+        hotShare = (warm / 4096) * 100;
+        logits = hotShare < 0.8 ? new Array(3.2,0.4,-0.9,-1.8) : hotShare < 5 ? new Array(-0.4,2.3,0.7,-1) : hotShare < 16 ? new Array(-1.6,0.7,2.7,1.2) : new Array(-2.9,-0.5,1.1,3.4);
+        renderFrame(); updateDemo();
+      };
+      img.src = ev.target.result;
+    };
+    r.readAsDataURL(f);
+  });
+  tempSlider.addEventListener('input', updateDemo);
+
+  var tick = 0;
+  setInterval(function() {
+    tick += 0.15;
+    var r = Math.sin(tick) * 0.6, p = Math.cos(tick * 0.8) * 0.4;
+    document.getElementById('hudAtt').textContent = 'ROLL ' + (r>=0?'+':'') + r.toFixed(1) + '\u00B0 \u00B7 PITCH ' + (p>=0?'+':'') + p.toFixed(1) + '\u00B0';
+    var ra = Math.round(r * 6), pa = Math.round(p * 6);
+    document.getElementById('m0').textContent = (1420 - ra - pa) + ' \u00B5s';
+    document.getElementById('m1').textContent = (1420 + ra + pa) + ' \u00B5s';
+    document.getElementById('m2').textContent = (1420 + ra - pa) + ' \u00B5s';
+    document.getElementById('m3').textContent = (1420 - ra + pa) + ' \u00B5s';
+  }, 250);
+  renderFrame(); updateDemo();
+
+  var cmTest = new Array(new Array(48,2,0,0), new Array(2,24,3,0), new Array(0,2,23,2), new Array(0,0,2,22));
+  var cmVal  = new Array(new Array(37,1,0,0), new Array(1,19,2,0), new Array(0,1,16,1), new Array(0,0,1,17));
+  var split = 'test';
+  function renderCM() {
+    var cm = split === 'test' ? cmTest : cmVal;
+    document.getElementById('mAcc').textContent = split === 'test' ? '90.0%' : '92.7%';
+    document.getElementById('mRec').textContent = split === 'test' ? '91.2%' : '93.1%';
+    document.getElementById('mFar').textContent = split === 'test' ? '4.0%' : '2.6%';
+    document.getElementById('cmNote').textContent = 'Split: ' + split + '/ (n=' + (split==='test'?130:96) + ') \u00B7 Severity MAE: ' + (split==='test'?'0.14':'0.11') + ' classes';
+    var tb = document.getElementById('cmBody'); tb.innerHTML = '';
+    new Array('no_fire','low','moderate','high').forEach(function(rn, ri) {
+      var tr = document.createElement('tr'), th = document.createElement('th'); th.textContent = rn; tr.appendChild(th);
+      cm.at(ri).forEach(function(val, ci) {
+        var td = document.createElement('td'); td.textContent = val;
+        if (ri === ci) td.className = 'cm-diag'; else if (val > 0) td.className = 'cm-err';
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+  document.getElementById('btnSplitTest').addEventListener('click', function() {
+    split = 'test'; this.classList.add('active'); document.getElementById('btnSplitVal').classList.remove('active'); renderCM();
+  });
+  document.getElementById('btnSplitVal').addEventListener('click', function() {
+    split = 'val'; this.classList.add('active'); document.getElementById('btnSplitTest').classList.remove('active'); renderCM();
+  });
+  document.getElementById('metricsUpload').addEventListener('change', function(e) {
+    var f = e.target.files.item(0); if (!f) return;
+    var r = new FileReader();
+    r.onload = function(ev) {
+      try {
+        var j = JSON.parse(ev.target.result);
+        new Array('test','val').forEach(function(sp) {
+          var s = sp === 'test' ? j.test : j.val;
+          if (s && typeof s === 'object' && s.confusion_matrix_rows_truth_cols_pred) {
+            if (sp === 'test') cmTest = s.confusion_matrix_rows_truth_cols_pred;
+            else cmVal = s.confusion_matrix_rows_truth_cols_pred;
+          }
+        });
+        renderCM();
+      } catch (err) { alert('Invalid metrics.json: ' + err.message); }
+    };
+    r.readAsText(f);
+  });
+  renderCM();
+})();
+</script>
+</body>
+</html>
